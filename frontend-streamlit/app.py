@@ -245,59 +245,63 @@ def admin_dashboard_ui(stories: list[dict[str, Any]]):
                         order_key = f"img_order_{idx}_{ch_idx}"
                         existing_images = chapter.get("images", [])
 
-                        # Load existing images into session state on first load
+                        # Initialize session state from saved images on first load
                         if order_key not in st.session_state:
                             st.session_state[order_key] = [
-                                {"name": f"image_{i+1}", "data": img}
+                                {"name": f"saved_{i+1}.jpg", "data": img}
                                 for i, img in enumerate(existing_images)
                             ]
 
-                        # File uploader — new uploads get added to session state list
+                        # File uploader — process immediately on upload, no button needed
                         uploaded_files = st.file_uploader(
-                            "Upload Images (PNG, JPG, WEBP) — can upload multiple",
+                            "📁 Upload Images (PNG, JPG, WEBP)",
                             type=["png", "jpg", "jpeg", "webp"],
                             accept_multiple_files=True,
                             key=f"upload_{idx}_{ch_idx}",
                         )
+
+                        # Auto-add newly uploaded files that aren't already in the list
                         if uploaded_files:
-                            if st.button("➕ Add uploaded images to list", key=f"add_imgs_{idx}_{ch_idx}"):
-                                existing_names = {item["name"] for item in st.session_state[order_key]}
-                                for uf in uploaded_files:
-                                    if uf.name not in existing_names:
-                                        raw = uf.read()
-                                        ext = uf.name.rsplit(".", 1)[-1].lower()
-                                        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-                                        b64 = base64.b64encode(raw).decode("utf-8")
-                                        st.session_state[order_key].append({
-                                            "name": uf.name,
-                                            "data": f"data:{mime};base64,{b64}",
-                                        })
-                                st.rerun()
+                            existing_names = {item["name"] for item in st.session_state[order_key]}
+                            added = 0
+                            for uf in uploaded_files:
+                                if uf.name not in existing_names:
+                                    raw = uf.read()
+                                    ext = uf.name.rsplit(".", 1)[-1].lower()
+                                    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                                    b64 = base64.b64encode(raw).decode("utf-8")
+                                    st.session_state[order_key].append({
+                                        "name": uf.name,
+                                        "data": f"data:{mime};base64,{b64}",
+                                    })
+                                    added += 1
+                            if added:
+                                st.success(f"✅ {added} image(s) added to list below.")
 
                         # Show current image list with arrange + delete buttons
                         img_list = st.session_state[order_key]
                         if img_list:
-                            st.markdown(f"**🖼 {len(img_list)} image(s) — drag order with ⬆️ ⬇️ buttons:**")
+                            st.markdown(f"**🖼 {len(img_list)} image(s) — arrange with ⬆️ ⬇️, remove with 🗑️ — then click Save:**")
                             for img_i, img_item in enumerate(img_list):
-                                img_col1, img_col2, img_col3, img_col4 = st.columns([3, 1, 1, 1])
-                                with img_col1:
-                                    st.image(img_item["data"], use_container_width=True, caption=f"{img_i+1}. {img_item['name']}")
-                                with img_col2:
-                                    if img_i > 0:
-                                        if st.button("⬆️", key=f"up_{idx}_{ch_idx}_{img_i}", use_container_width=True):
-                                            img_list[img_i], img_list[img_i - 1] = img_list[img_i - 1], img_list[img_i]
+                                with st.container(border=True):
+                                    img_col_img, img_col_btns = st.columns([4, 1])
+                                    with img_col_img:
+                                        st.image(img_item["data"], use_container_width=True,
+                                                 caption=f"#{img_i+1} — {img_item['name']}")
+                                    with img_col_btns:
+                                        if img_i > 0:
+                                            if st.button("⬆️", key=f"up_{idx}_{ch_idx}_{img_i}", use_container_width=True):
+                                                img_list[img_i], img_list[img_i - 1] = img_list[img_i - 1], img_list[img_i]
+                                                st.rerun()
+                                        if img_i < len(img_list) - 1:
+                                            if st.button("⬇️", key=f"dn_{idx}_{ch_idx}_{img_i}", use_container_width=True):
+                                                img_list[img_i], img_list[img_i + 1] = img_list[img_i + 1], img_list[img_i]
+                                                st.rerun()
+                                        if st.button("🗑️", key=f"rm_{idx}_{ch_idx}_{img_i}", use_container_width=True):
+                                            img_list.pop(img_i)
                                             st.rerun()
-                                with img_col3:
-                                    if img_i < len(img_list) - 1:
-                                        if st.button("⬇️", key=f"dn_{idx}_{ch_idx}_{img_i}", use_container_width=True):
-                                            img_list[img_i], img_list[img_i + 1] = img_list[img_i + 1], img_list[img_i]
-                                            st.rerun()
-                                with img_col4:
-                                    if st.button("🗑️", key=f"rm_{idx}_{ch_idx}_{img_i}", use_container_width=True):
-                                        img_list.pop(img_i)
-                                        st.rerun()
                         else:
-                            st.info("No images yet. Upload and click 'Add uploaded images to list'.")
+                            st.info("No images yet. Upload images above — they will appear here automatically.")
 
                     col_save, col_delete = st.columns(2)
                     with col_save:
