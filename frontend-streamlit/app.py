@@ -220,33 +220,31 @@ def admin_dashboard_ui(stories: list[dict[str, Any]]):
                 st.rerun()
 
             # List and manage chapters
-            for ch_idx, chapter in enumerate(chapters):
-                with st.container(border=True):
-                    ch_col1, ch_col2 = st.columns([3, 1])
-
-                    with ch_col1:
-                        st.write(f"**Ch {chapter.get('number', '?')}:** {chapter.get('title', 'Untitled')}")
-
-                    with ch_col2:
-                        if st.button("❌ Delete", key=f"delete_ch_{idx}_{ch_idx}", use_container_width=True):
-                            story["chapters"].pop(ch_idx)
-                            story["updatedAt"] = datetime.now().isoformat()
-                            save_stories(stories)
-                            st.success("Chapter deleted!")
-                            st.rerun()
-
-                    # Chapter edit form
-                    with st.expander("✏️ Edit", expanded=False):
-                        ch_title = st.text_input("Title", value=chapter.get("title", ""), key=f"ch_title_{idx}_{ch_idx}")
-                        ch_number = st.number_input("Number", value=int(chapter.get("number", 1)), key=f"ch_number_{idx}_{ch_idx}")
-                        ch_type = st.selectbox("Content Type", ["text", "images"], index=0 if chapter.get("contentType") == "text" else 1, key=f"ch_type_{idx}_{ch_idx}")
-
-                        if ch_type == "text":
-                            ch_content = st.text_area("Content", value=chapter.get("content", ""), key=f"ch_content_{idx}_{ch_idx}", height=150)
-                        else:
-                            ch_content = ""
-
-                        if st.button("Save Chapter", key=f"save_ch_{idx}_{ch_idx}"):
+            if st.checkbox("📝 Edit Chapters", key=f"edit_chapters_{idx}"):
+                st.markdown("#### Edit Chapters")
+                
+                for ch_idx, chapter in enumerate(chapters):
+                    st.divider()
+                    
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    
+                    with col1:
+                        ch_title = st.text_input("Chapter Title", value=chapter.get("title", ""), key=f"ch_title_{idx}_{ch_idx}")
+                    
+                    with col2:
+                        ch_number = st.number_input("Ch #", value=int(chapter.get("number", 1)), min_value=1, key=f"ch_number_{idx}_{ch_idx}")
+                    
+                    with col3:
+                        ch_type = st.selectbox("Type", ["text", "images"], index=0 if chapter.get("contentType") == "text" else 1, key=f"ch_type_{idx}_{ch_idx}")
+                    
+                    if ch_type == "text":
+                        ch_content = st.text_area("Content", value=chapter.get("content", ""), key=f"ch_content_{idx}_{ch_idx}", height=100)
+                    else:
+                        ch_content = ""
+                    
+                    col_save, col_delete = st.columns(2)
+                    with col_save:
+                        if st.button("✅ Save", key=f"save_ch_{idx}_{ch_idx}", use_container_width=True):
                             chapter["title"] = ch_title
                             chapter["number"] = ch_number
                             chapter["contentType"] = ch_type
@@ -256,6 +254,14 @@ def admin_dashboard_ui(stories: list[dict[str, Any]]):
                             story["updatedAt"] = datetime.now().isoformat()
                             save_stories(stories)
                             st.success("Chapter saved!")
+                            st.rerun()
+                    
+                    with col_delete:
+                        if st.button("❌ Delete", key=f"delete_ch_{idx}_{ch_idx}", use_container_width=True):
+                            story["chapters"].pop(ch_idx)
+                            story["updatedAt"] = datetime.now().isoformat()
+                            save_stories(stories)
+                            st.success("Chapter deleted!")
                             st.rerun()
 
 
