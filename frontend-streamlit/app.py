@@ -2,17 +2,22 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from datetime import datetime
 
 import requests
 import streamlit as st
 
-
+# Page config
 st.set_page_config(
-    page_title="Storyverse Reader",
-    page_icon="book",
+    page_title="Storyverse",
+    page_icon="📖",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
+# Constants
+ADMIN_ID = "soban"
+ADMIN_PASS = "pass"
 BASE_DIR = Path(__file__).resolve().parent
 LOCAL_STORIES_PATH = Path(
     st.secrets.get("LOCAL_STORIES_PATH", os.getenv("LOCAL_STORIES_PATH", str(BASE_DIR / "stories-static.json")))
@@ -20,214 +25,316 @@ LOCAL_STORIES_PATH = Path(
 API_BASE_URL = st.secrets.get("API_BASE_URL", os.getenv("API_BASE_URL", "")).rstrip("/")
 REQUEST_TIMEOUT_SECONDS = 30
 
+# Initialize session state
+if "admin_logged_in" not in st.session_state:
+    st.session_state.admin_logged_in = False
+if "stories" not in st.session_state:
+    st.session_state.stories = []
+if "show_admin_login" not in st.session_state:
+    st.session_state.show_admin_login = False
 
-def chapter_sort_key(chapter: dict[str, Any]) -> tuple[int, int]:
-    raw_number = chapter.get("number")
+
+def load_stories() -> list[dict[str, Any]]:
+    """Load stories from all available sources."""
     try:
-        chapter_number = int(raw_number)
-    except (TypeError, ValueError):
-        chapter_number = 10**9
+        if API_BASE_URL:
+            response = requests.get(
+                f"{API_BASE_URL}/stories",
+                timeout=REQUEST_TIMEOUT_SECONDS,
+                headers={"Accept": "application/json"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            stories = payload.get("stories", [])
+            if isinstance(stories, list):
+                return stories
+    except Exception:
+        pass
 
-    created_at = chapter.get("createdAt") or ""
-    return chapter_number, hash(created_at)
+    # Local file fallback
+    if LOCAL_STORIES_PATH.exists():
+        try:
+            with LOCAL_STORIES_PATH.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+                stories = payload.get("stories", [])
+                if isinstance(stories, list):
+                    return stories
+        except Exception:
+            pass
 
-
-@st.cache_data(ttl=30)
-def fetch_stories_from_api() -> list[dict[str, Any]]:
-    if not API_BASE_URL:
-        return []
-
-    response = requests.get(
-        f"{API_BASE_URL}/stories",
-        timeout=REQUEST_TIMEOUT_SECONDS,
-        headers={"Accept": "application/json"},
-    )
-    response.raise_for_status()
-
-    payload = response.json()
-    stories = payload.get("stories", []) if isinstance(payload, dict) else []
-    if not isinstance(stories, list):
-        return []
-
-    return stories
-
-
-@st.cache_data(ttl=30)
-def fetch_stories_from_local_file() -> list[dict[str, Any]]:
-    if not LOCAL_STORIES_PATH.exists():
-        return []
-
-    try:
-        with LOCAL_STORIES_PATH.open("r", encoding="utf-8") as file_obj:
-            payload = json.load(file_obj)
-    except (OSError, json.JSONDecodeError):
-        return []
-
-    stories = payload.get("stories", []) if isinstance(payload, dict) else []
-    if not isinstance(stories, list):
-        return []
-
-    return stories
-
-
-@st.cache_data(ttl=30)
-def fetch_stories_from_github() -> list[dict[str, Any]]:
-    """Fallback: fetch stories from GitHub raw URL."""
-    github_raw_url = (
-        "https://raw.githubusercontent.com/sobannaik85-bot/story/main/"
-        "frontend-streamlit/stories-static.json"
-    )
-
+    # GitHub fallback
     try:
         response = requests.get(
-            github_raw_url,
+            "https://raw.githubusercontent.com/sobannaik85-bot/story/main/frontend-streamlit/stories-static.json",
             timeout=REQUEST_TIMEOUT_SECONDS,
-            headers={"Accept": "application/json"},
         )
         response.raise_for_status()
         payload = response.json()
-        stories = payload.get("stories", []) if isinstance(payload, dict) else []
+        stories = payload.get("stories", [])
         if isinstance(stories, list):
             return stories
-    except Exception as exc:
-        st.write(f"DEBUG: GitHub fetch failed: {exc}")
+    except Exception:
+        pass
 
-    return []
-
-
-@st.cache_data(ttl=30)
-def fetch_stories_hardcoded() -> list[dict[str, Any]]:
-    """Ultimate fallback: hardcoded stories for guaranteed availability."""
-    # This ensures the app always works
+    # Hardcoded fallback
     return get_hardcoded_stories()
 
 
 def get_hardcoded_stories() -> list[dict[str, Any]]:
-    """Hardcoded stories for when all external sources fail."""
+    """Hardcoded demo stories."""
     return [
         {
-            "id": "hardcoded_1",
-            "title": "Sample Story - Concrete Hearts",
-            "description": "Two strangers keep finding each other in a sprawling megacity.",
-            "genre": "Romance",
+            "id": "demo_1",
+            "title": "The First Rewrite",
+            "description": "A story about beginnings and second chances.",
+            "genre": "Drama",
             "coverImage": None,
             "chapters": [
                 {
                     "id": "ch_1",
-                    "title": "Platform 9",
+                    "title": "Chapter One",
                     "number": 1,
                     "contentType": "text",
-                    "content": "The first time Lena noticed him, he was reading a paperback on the southbound platform.\n\nThis alone was enough to make him unusual. Nobody read paper books anymore. But there he stood, perfectly calm in the current of commuters, a battered copy in long fingers.",
+                    "content": "This is a demo story. Log in as admin to create real stories!\n\nAdmin ID: soban\nPassword: pass",
                     "images": [],
-                    "createdAt": "2026-03-15T12:33:37.874Z"
+                    "createdAt": datetime.now().isoformat(),
                 }
             ],
-            "createdAt": "2026-03-15T12:33:37.873Z",
-            "updatedAt": "2026-03-15T12:33:37.874Z"
+            "createdAt": datetime.now().isoformat(),
+            "updatedAt": datetime.now().isoformat(),
         }
     ]
 
 
-def render_story_header(story: dict[str, Any]) -> None:
-    st.title(story.get("title", "Untitled Story"))
-
-    genre = story.get("genre")
-    if genre:
-        st.caption(f"Genre: {genre}")
-
-    description = story.get("description")
-    if description:
-        st.write(description)
-
-    cover_image = story.get("coverImage")
-    if isinstance(cover_image, str) and cover_image.strip():
-        st.image(cover_image, use_container_width=True)
+def save_stories(stories: list[dict[str, Any]]) -> None:
+    """Save stories to local JSON file."""
+    try:
+        payload = {"stories": stories, "updatedAt": datetime.now().isoformat()}
+        with LOCAL_STORIES_PATH.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        st.error(f"Failed to save stories: {exc}")
 
 
-def render_chapter(chapter: dict[str, Any]) -> None:
-    chapter_number = chapter.get("number", "?")
-    chapter_title = chapter.get("title", "Untitled Chapter")
-    st.subheader(f"Chapter {chapter_number}: {chapter_title}")
+def admin_login_ui():
+    """Admin login interface."""
+    st.markdown("# 🔐 Admin Login")
 
-    content_type = str(chapter.get("contentType") or "text").lower()
+    col1, col2 = st.columns([1, 2])
 
-    if content_type == "images":
-        images = chapter.get("images", [])
-        if isinstance(images, list) and images:
-            st.image(images, use_container_width=True)
-            return
-        st.info("This image chapter has no images.")
+    with col1:
+        admin_id = st.text_input("Admin ID", key="admin_id_input")
+        admin_pass = st.text_input("Password", type="password", key="admin_pass_input")
+
+        if st.button("Login", use_container_width=True):
+            if admin_id == ADMIN_ID and admin_pass == ADMIN_PASS:
+                st.session_state.admin_logged_in = True
+                st.session_state.show_admin_login = False
+                st.success("Login successful! Reloading...")
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+
+
+def admin_dashboard_ui(stories: list[dict[str, Any]]):
+    """Admin dashboard for story/chapter management."""
+    st.markdown("# 📚 Admin Dashboard")
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("Logout", use_container_width=True):
+            st.session_state.admin_logged_in = False
+            st.rerun()
+
+    # Create new story
+    with st.expander("➕ Create New Story", expanded=False):
+        story_title = st.text_input("Story Title")
+        story_desc = st.text_area("Description")
+        story_genre = st.text_input("Genre")
+
+        if st.button("Create Story"):
+            if story_title.strip():
+                new_story = {
+                    "id": f"story_{len(stories)}_{int(datetime.now().timestamp())}",
+                    "title": story_title,
+                    "description": story_desc,
+                    "genre": story_genre,
+                    "coverImage": None,
+                    "chapters": [],
+                    "createdAt": datetime.now().isoformat(),
+                    "updatedAt": datetime.now().isoformat(),
+                }
+                stories.append(new_story)
+                save_stories(stories)
+                st.success(f"Story '{story_title}' created!")
+                st.rerun()
+            else:
+                st.error("Story title cannot be empty")
+
+    st.divider()
+
+    # Manage stories
+    st.markdown("## Manage Stories")
+
+    if not stories:
+        st.info("No stories yet.")
         return
 
-    content = chapter.get("content", "")
-    if isinstance(content, str) and content.strip():
-        st.markdown(content.replace("\n", "  \n"))
+    for idx, story in enumerate(stories):
+        with st.expander(f"📖 {story.get('title', 'Untitled')} ({len(story.get('chapters', []))} chapters)", expanded=False):
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.write(f"**Genre:** {story.get('genre', 'N/A')}")
+                st.write(f"**Description:** {story.get('description', 'N/A')}")
+
+            with col2:
+                if st.button("Delete", key=f"delete_story_{idx}"):
+                    stories.pop(idx)
+                    save_stories(stories)
+                    st.success("Story deleted!")
+                    st.rerun()
+
+            with col3:
+                st.write(f"**Chapters:** {len(story.get('chapters', []))}")
+
+            # Chapters section
+            st.markdown("### Chapters")
+            chapters = story.get("chapters", [])
+
+            # Add new chapter
+            if st.button("➕ Add Chapter", key=f"add_chapter_{idx}"):
+                new_chapter = {
+                    "id": f"ch_{len(chapters)}_{int(datetime.now().timestamp())}",
+                    "title": f"Chapter {len(chapters) + 1}",
+                    "number": len(chapters) + 1,
+                    "contentType": "text",
+                    "content": "",
+                    "images": [],
+                    "createdAt": datetime.now().isoformat(),
+                }
+                story["chapters"].append(new_chapter)
+                story["updatedAt"] = datetime.now().isoformat()
+                save_stories(stories)
+                st.success("Chapter added!")
+                st.rerun()
+
+            # List and manage chapters
+            for ch_idx, chapter in enumerate(chapters):
+                with st.container(border=True):
+                    ch_col1, ch_col2 = st.columns([3, 1])
+
+                    with ch_col1:
+                        st.write(f"**Ch {chapter.get('number', '?')}:** {chapter.get('title', 'Untitled')}")
+
+                    with ch_col2:
+                        if st.button("❌ Delete", key=f"delete_ch_{idx}_{ch_idx}", use_container_width=True):
+                            story["chapters"].pop(ch_idx)
+                            story["updatedAt"] = datetime.now().isoformat()
+                            save_stories(stories)
+                            st.success("Chapter deleted!")
+                            st.rerun()
+
+                    # Chapter edit form
+                    with st.expander("✏️ Edit", expanded=False):
+                        ch_title = st.text_input("Title", value=chapter.get("title", ""), key=f"ch_title_{idx}_{ch_idx}")
+                        ch_number = st.number_input("Number", value=int(chapter.get("number", 1)), key=f"ch_number_{idx}_{ch_idx}")
+                        ch_type = st.selectbox("Content Type", ["text", "images"], index=0 if chapter.get("contentType") == "text" else 1, key=f"ch_type_{idx}_{ch_idx}")
+
+                        if ch_type == "text":
+                            ch_content = st.text_area("Content", value=chapter.get("content", ""), key=f"ch_content_{idx}_{ch_idx}", height=150)
+                        else:
+                            ch_content = ""
+
+                        if st.button("Save Chapter", key=f"save_ch_{idx}_{ch_idx}"):
+                            chapter["title"] = ch_title
+                            chapter["number"] = ch_number
+                            chapter["contentType"] = ch_type
+                            if ch_type == "text":
+                                chapter["content"] = ch_content
+                            chapter["updatedAt"] = datetime.now().isoformat()
+                            story["updatedAt"] = datetime.now().isoformat()
+                            save_stories(stories)
+                            st.success("Chapter saved!")
+                            st.rerun()
+
+
+def reader_view_ui(stories: list[dict[str, Any]]):
+    """Reader view for non-admin users."""
+    st.markdown("# 📚 Storyverse Reader")
+
+    if not stories:
+        st.warning("No stories available.")
+        return
+
+    st.sidebar.markdown("## 📖 Stories")
+
+    story_labels = [s.get("title", "Untitled") for s in stories]
+    selected_label = st.sidebar.selectbox("Select a story:", story_labels)
+    selected_story = stories[story_labels.index(selected_label)]
+
+    # Story header
+    st.title(selected_story.get("title", "Untitled Story"))
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if genre := selected_story.get("genre"):
+            st.caption(f"**Genre:** {genre}")
+    with col2:
+        st.caption(f"**Chapters:** {len(selected_story.get('chapters', []))}")
+
+    if desc := selected_story.get("description"):
+        st.write(desc)
+
+    st.divider()
+
+    # Chapters
+    chapters = selected_story.get("chapters", [])
+    if not chapters:
+        st.info("No chapters in this story yet.")
+        return
+
+    chapter_labels = [f"Chapter {ch.get('number', '?')}: {ch.get('title', 'Untitled')}" for ch in chapters]
+    selected_ch_label = st.selectbox("Choose chapter:", chapter_labels)
+    selected_chapter = chapters[chapter_labels.index(selected_ch_label)]
+
+    # Render chapter
+    st.markdown(f"## {selected_chapter.get('title', 'Untitled Chapter')}")
+
+    if selected_chapter.get("contentType") == "images":
+        images = selected_chapter.get("images", [])
+        if images:
+            st.image(images, use_container_width=True)
+        else:
+            st.info("No images in this chapter.")
     else:
-        st.info("No text content in this chapter.")
+        content = selected_chapter.get("content", "")
+        if content:
+            st.markdown(content.replace("\n", "  \n"))
+        else:
+            st.info("No content in this chapter.")
 
 
-st.sidebar.header("Storyverse")
+# Main app
+def main():
+    if not st.session_state.admin_logged_in:
+        # Check for admin login button in sidebar
+        with st.sidebar:
+            st.markdown("---")
+            if st.button("🔐 Admin Login", use_container_width=True):
+                st.session_state.show_admin_login = True
 
-if st.sidebar.button("Refresh Stories"):
-    st.cache_data.clear()
-
-if API_BASE_URL:
-    st.sidebar.caption(f"Backend: {API_BASE_URL}")
-else:
-    st.sidebar.caption("Backend: not configured")
-
-api_error_message = ""
-try:
-    stories = fetch_stories_from_api()
-except requests.RequestException as exc:
-    api_error_message = str(exc)
-    stories = []
-
-if not stories:
-    stories = fetch_stories_from_local_file()
-    if stories:
-        st.sidebar.caption("Data source: local stories-static.json")
-        if api_error_message:
-            st.warning("Backend is unavailable. Showing bundled stories instead.")
+        if st.session_state.show_admin_login:
+            admin_login_ui()
+        else:
+            # Load and display stories in reader mode
+            st.session_state.stories = load_stories()
+            reader_view_ui(st.session_state.stories)
     else:
-        st.sidebar.caption("Data source: none")
+        # Admin mode
+        st.session_state.stories = load_stories()
+        admin_dashboard_ui(st.session_state.stories)
 
-if not stories:
-    stories = fetch_stories_from_github()
-    if stories:
-        st.sidebar.caption("Data source: GitHub raw")
-        if api_error_message:
-            st.warning("Backend is unavailable. Loading from GitHub instead.")
 
-if not stories:
-    stories = fetch_stories_hardcoded()
-    if stories:
-        st.sidebar.caption("Data source: hardcoded (demo)")
-        st.warning("Using hardcoded demo stories. Real data will load once backend/GitHub is configured.")
-
-if api_error_message and API_BASE_URL and stories:
-    st.info("Backend API was unreachable; using fallback data.")
-
-if not stories:
-    st.error("No stories available. This should not happen.")
-
-story_labels = [story.get("title", "Untitled Story") for story in stories]
-selected_story_label = st.sidebar.selectbox("Select Story", options=story_labels)
-selected_story = stories[story_labels.index(selected_story_label)]
-
-render_story_header(selected_story)
-
-chapters = selected_story.get("chapters", [])
-if not isinstance(chapters, list) or not chapters:
-    st.info("No chapters yet for this story.")
-    st.stop()
-
-sorted_chapters = sorted(chapters, key=chapter_sort_key)
-chapter_options = [
-    f"Chapter {chapter.get('number', '?')}: {chapter.get('title', 'Untitled')}"
-    for chapter in sorted_chapters
-]
-selected_chapter_label = st.selectbox("Choose Chapter", options=chapter_options)
-selected_chapter = sorted_chapters[chapter_options.index(selected_chapter_label)]
-
-render_chapter(selected_chapter)
+if __name__ == "__main__":
+    main()
