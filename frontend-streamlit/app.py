@@ -70,6 +70,36 @@ def fetch_stories_from_local_file() -> list[dict[str, Any]]:
     return stories
 
 
+@st.cache_data(ttl=30)
+def fetch_stories_from_github() -> list[dict[str, Any]]:
+    """Fallback: fetch stories from GitHub raw URL."""
+    github_raw_url = (
+        "https://raw.githubusercontent.com/sobannaik85-bot/story/main/"
+        "frontend-streamlit/stories-static.json"
+    )
+
+    try:
+        response = requests.get(
+            github_raw_url,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return []
+
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+
+    stories = payload.get("stories", []) if isinstance(payload, dict) else []
+    if not isinstance(stories, list):
+        return []
+
+    return stories
+
+
 def render_story_header(story: dict[str, Any]) -> None:
     st.title(story.get("title", "Untitled Story"))
 
@@ -134,11 +164,18 @@ if not stories:
     else:
         st.sidebar.caption("Data source: none")
 
+if not stories:
+    stories = fetch_stories_from_github()
+    if stories:
+        st.sidebar.caption("Data source: GitHub raw")
+        if api_error_message:
+            st.warning("Backend is unavailable. Loading from GitHub instead.")
+
 if api_error_message and API_BASE_URL and stories:
     st.info("Backend API was unreachable; using local fallback data.")
 
 if not stories:
-    st.error("No stories available. Configure API_BASE_URL or add stories-static.json.")
+    st.error("No stories available. Please configure API_BASE_URL or ensure GitHub is accessible.")
     if api_error_message:
         st.code(api_error_message)
     st.stop()
