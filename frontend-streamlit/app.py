@@ -242,23 +242,63 @@ def admin_dashboard_ui(stories: list[dict[str, Any]]):
                         ch_content = st.text_area("Content", value=chapter.get("content", ""), key=f"ch_content_{idx}_{ch_idx}", height=100)
                     else:
                         ch_content = ""
+                        order_key = f"img_order_{idx}_{ch_idx}"
                         existing_images = chapter.get("images", [])
-                        if existing_images:
-                            st.caption(f"Current images: {len(existing_images)} uploaded")
-                            show_preview = st.checkbox("Preview current images", key=f"preview_{idx}_{ch_idx}")
-                            if show_preview:
-                                for img in existing_images:
-                                    st.image(img, use_container_width=True)
-                        
+
+                        # Load existing images into session state on first load
+                        if order_key not in st.session_state:
+                            st.session_state[order_key] = [
+                                {"name": f"image_{i+1}", "data": img}
+                                for i, img in enumerate(existing_images)
+                            ]
+
+                        # File uploader — new uploads get added to session state list
                         uploaded_files = st.file_uploader(
-                            "Upload Images (PNG, JPG, WEBP)",
+                            "Upload Images (PNG, JPG, WEBP) — can upload multiple",
                             type=["png", "jpg", "jpeg", "webp"],
                             accept_multiple_files=True,
                             key=f"upload_{idx}_{ch_idx}",
                         )
                         if uploaded_files:
-                            st.caption(f"{len(uploaded_files)} new image(s) selected — click Save to apply")
-                    
+                            if st.button("➕ Add uploaded images to list", key=f"add_imgs_{idx}_{ch_idx}"):
+                                existing_names = {item["name"] for item in st.session_state[order_key]}
+                                for uf in uploaded_files:
+                                    if uf.name not in existing_names:
+                                        raw = uf.read()
+                                        ext = uf.name.rsplit(".", 1)[-1].lower()
+                                        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                                        b64 = base64.b64encode(raw).decode("utf-8")
+                                        st.session_state[order_key].append({
+                                            "name": uf.name,
+                                            "data": f"data:{mime};base64,{b64}",
+                                        })
+                                st.rerun()
+
+                        # Show current image list with arrange + delete buttons
+                        img_list = st.session_state[order_key]
+                        if img_list:
+                            st.markdown(f"**🖼 {len(img_list)} image(s) — drag order with ⬆️ ⬇️ buttons:**")
+                            for img_i, img_item in enumerate(img_list):
+                                img_col1, img_col2, img_col3, img_col4 = st.columns([3, 1, 1, 1])
+                                with img_col1:
+                                    st.image(img_item["data"], use_container_width=True, caption=f"{img_i+1}. {img_item['name']}")
+                                with img_col2:
+                                    if img_i > 0:
+                                        if st.button("⬆️", key=f"up_{idx}_{ch_idx}_{img_i}", use_container_width=True):
+                                            img_list[img_i], img_list[img_i - 1] = img_list[img_i - 1], img_list[img_i]
+                                            st.rerun()
+                                with img_col3:
+                                    if img_i < len(img_list) - 1:
+                                        if st.button("⬇️", key=f"dn_{idx}_{ch_idx}_{img_i}", use_container_width=True):
+                                            img_list[img_i], img_list[img_i + 1] = img_list[img_i + 1], img_list[img_i]
+                                            st.rerun()
+                                with img_col4:
+                                    if st.button("🗑️", key=f"rm_{idx}_{ch_idx}_{img_i}", use_container_width=True):
+                                        img_list.pop(img_i)
+                                        st.rerun()
+                        else:
+                            st.info("No images yet. Upload and click 'Add uploaded images to list'.")
+
                     col_save, col_delete = st.columns(2)
                     with col_save:
                         if st.button("✅ Save", key=f"save_ch_{idx}_{ch_idx}", use_container_width=True):
@@ -268,15 +308,8 @@ def admin_dashboard_ui(stories: list[dict[str, Any]]):
                             if ch_type == "text":
                                 chapter["content"] = ch_content
                             else:
-                                if uploaded_files:
-                                    b64_images = []
-                                    for uf in uploaded_files:
-                                        raw = uf.read()
-                                        ext = uf.name.rsplit(".", 1)[-1].lower()
-                                        mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-                                        b64 = base64.b64encode(raw).decode("utf-8")
-                                        b64_images.append(f"data:{mime};base64,{b64}")
-                                    chapter["images"] = b64_images
+                                order_key = f"img_order_{idx}_{ch_idx}"
+                                chapter["images"] = [item["data"] for item in st.session_state.get(order_key, [])]
                             chapter["updatedAt"] = datetime.now().isoformat()
                             story["updatedAt"] = datetime.now().isoformat()
                             save_stories(stories)
