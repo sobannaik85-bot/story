@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -243,40 +244,46 @@ def admin_dashboard_ui(stories: list[dict[str, Any]]):
                     else:
                         ch_content = ""
                         order_key = f"img_order_{idx}_{ch_idx}"
+                        upload_sig_key = f"img_upload_sig_{idx}_{ch_idx}"
                         existing_images = chapter.get("images", [])
 
                         # Initialize session state from saved images on first load
                         if order_key not in st.session_state:
                             st.session_state[order_key] = [
-                                {"name": f"saved_{i+1}.jpg", "data": img}
+                                {"name": f"saved_{i+1}.jpg", "data": img, "sig": f"saved-{i}"}
                                 for i, img in enumerate(existing_images)
                             ]
 
-                        # File uploader — process immediately on upload, no button needed
-                        uploaded_files = st.file_uploader(
-                            "📁 Upload Images (PNG, JPG, WEBP)",
+                        # One-at-a-time uploads are more reliable on Streamlit Cloud.
+                        uploaded_file = st.file_uploader(
+                            "📁 Upload one image at a time (PNG, JPG, WEBP)",
                             type=["png", "jpg", "jpeg", "webp"],
-                            accept_multiple_files=True,
+                            accept_multiple_files=False,
                             key=f"upload_{idx}_{ch_idx}",
                         )
 
-                        # Auto-add newly uploaded files that aren't already in the list
-                        if uploaded_files:
-                            existing_names = {item["name"] for item in st.session_state[order_key]}
-                            added = 0
-                            for uf in uploaded_files:
-                                if uf.name not in existing_names:
-                                    raw = uf.read()
-                                    ext = uf.name.rsplit(".", 1)[-1].lower()
-                                    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
-                                    b64 = base64.b64encode(raw).decode("utf-8")
-                                    st.session_state[order_key].append({
-                                        "name": uf.name,
-                                        "data": f"data:{mime};base64,{b64}",
-                                    })
-                                    added += 1
-                            if added:
-                                st.success(f"✅ {added} image(s) added to list below.")
+                        # Auto-add newly uploaded image; dedupe by content signature.
+                        if uploaded_file is not None:
+                            raw = uploaded_file.getvalue()
+                            if raw:
+                                ext = uploaded_file.name.rsplit(".", 1)[-1].lower()
+                                mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                                sig = f"{uploaded_file.name}:{len(raw)}:{hashlib.md5(raw).hexdigest()}"
+                                last_sig = st.session_state.get(upload_sig_key)
+                                existing_sigs = {item.get("sig", "") for item in st.session_state[order_key]}
+
+                                if sig != last_sig:
+                                    st.session_state[upload_sig_key] = sig
+                                    if sig not in existing_sigs:
+                                        b64 = base64.b64encode(raw).decode("utf-8")
+                                        st.session_state[order_key].append({
+                                            "name": uploaded_file.name,
+                                            "data": f"data:{mime};base64,{b64}",
+                                            "sig": sig,
+                                        })
+                                        st.success("✅ Image added. Upload next image or click Save.")
+                                    else:
+                                        st.info("Image already in list.")
 
                         # Show current image list with arrange + delete buttons
                         img_list = st.session_state[order_key]
