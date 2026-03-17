@@ -1,0 +1,22 @@
+{
+  "name": "storyverse",
+  "version": "1.0.0",
+  "description": "A modern story/manga chapter reader",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:netlify": "npx netlify dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy:netlify": "npx netlify deploy --prod --dir=dist"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-legacy": "^8.0.0",
+    "vite": "^8.0.0"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.2",
+    "@netlify/functions": "^5.1.3",
+    "web-push": "^3.6.7"
+  }
+}

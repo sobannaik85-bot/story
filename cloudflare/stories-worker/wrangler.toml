@@ -1,0 +1,8 @@
+name = "storyverse-stories-api"
+main = "src/index.js"
+compatibility_date = "2026-03-17"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "storyverse"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
