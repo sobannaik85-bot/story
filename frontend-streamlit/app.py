@@ -85,19 +85,47 @@ def fetch_stories_from_github() -> list[dict[str, Any]]:
             headers={"Accept": "application/json"},
         )
         response.raise_for_status()
-    except requests.RequestException:
-        return []
-
-    try:
         payload = response.json()
-    except ValueError:
-        return []
+        stories = payload.get("stories", []) if isinstance(payload, dict) else []
+        if isinstance(stories, list):
+            return stories
+    except Exception as exc:
+        st.write(f"DEBUG: GitHub fetch failed: {exc}")
 
-    stories = payload.get("stories", []) if isinstance(payload, dict) else []
-    if not isinstance(stories, list):
-        return []
+    return []
 
-    return stories
+
+@st.cache_data(ttl=30)
+def fetch_stories_hardcoded() -> list[dict[str, Any]]:
+    """Ultimate fallback: hardcoded stories for guaranteed availability."""
+    # This ensures the app always works
+    return get_hardcoded_stories()
+
+
+def get_hardcoded_stories() -> list[dict[str, Any]]:
+    """Hardcoded stories for when all external sources fail."""
+    return [
+        {
+            "id": "hardcoded_1",
+            "title": "Sample Story - Concrete Hearts",
+            "description": "Two strangers keep finding each other in a sprawling megacity.",
+            "genre": "Romance",
+            "coverImage": None,
+            "chapters": [
+                {
+                    "id": "ch_1",
+                    "title": "Platform 9",
+                    "number": 1,
+                    "contentType": "text",
+                    "content": "The first time Lena noticed him, he was reading a paperback on the southbound platform.\n\nThis alone was enough to make him unusual. Nobody read paper books anymore. But there he stood, perfectly calm in the current of commuters, a battered copy in long fingers.",
+                    "images": [],
+                    "createdAt": "2026-03-15T12:33:37.874Z"
+                }
+            ],
+            "createdAt": "2026-03-15T12:33:37.873Z",
+            "updatedAt": "2026-03-15T12:33:37.874Z"
+        }
+    ]
 
 
 def render_story_header(story: dict[str, Any]) -> None:
@@ -171,14 +199,17 @@ if not stories:
         if api_error_message:
             st.warning("Backend is unavailable. Loading from GitHub instead.")
 
+if not stories:
+    stories = fetch_stories_hardcoded()
+    if stories:
+        st.sidebar.caption("Data source: hardcoded (demo)")
+        st.warning("Using hardcoded demo stories. Real data will load once backend/GitHub is configured.")
+
 if api_error_message and API_BASE_URL and stories:
-    st.info("Backend API was unreachable; using local fallback data.")
+    st.info("Backend API was unreachable; using fallback data.")
 
 if not stories:
-    st.error("No stories available. Please configure API_BASE_URL or ensure GitHub is accessible.")
-    if api_error_message:
-        st.code(api_error_message)
-    st.stop()
+    st.error("No stories available. This should not happen.")
 
 story_labels = [story.get("title", "Untitled Story") for story in stories]
 selected_story_label = st.sidebar.selectbox("Select Story", options=story_labels)
